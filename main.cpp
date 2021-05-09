@@ -8,9 +8,10 @@ Mat GenerateKey(Size size) {
     return key;
 }
 
-Mat EncryptionSecretPicture(Mat &mat) {
+Mat EncryptionSecretPicture(Mat &mat, Mat key) {
     Mat res = Mat(mat.size(), CV_8UC3);
-    Mat key = GenerateKey(mat.size());
+    if (key.size() == Size(0, 0))
+        key = GenerateKey(mat.size());
 
     std::vector<Mat> channels0;
     std::vector<Mat> channels1;
@@ -144,14 +145,103 @@ void convertSize(Size size, Mat &src) {
     src = tmp;
 }
 
-int main()
-{
-	Mat	image = imread("../src_images/color2.jpg", 1);
-    Mat image2 = imread("../src_images/color2.jpg", 1);
-	Mat	stego = imread("../src_images/color.jpg", 1);
-    //resize(); for stego
-    Mat key = EncryptionSecretPicture(stego);    
+void img_read(Mat& res, String str) {
+    String path;
+    std::cin >> path;
+    while ((res = imread(path, IMREAD_ANYDEPTH | IMREAD_COLOR)).size() == Size(0, 0)) {
+        std::cout << str << std::endl;
+        std::cin >> path;
+    }
+}
 
+std::string get_path_to_write(Mat img, std::string name) {
+    bool can_not_write = true;
+    std::string path;
+    std::cout << "Введите путь к папке, куда записать результат:" << std::endl;
+
+    while (can_not_write) {
+        std::cin >> path;
+        if (path[path.length() - 1] != '/' || path[path.length() - 1] != '\\')
+            path = path + '/';
+        try {
+            can_not_write = false;
+            imwrite(path + name, img);
+        }
+        catch (Exception e) {
+            can_not_write = true;
+            std::cout << "Папка не найдена. Повторите ввод:" << std::endl;
+        }
+    }
+    return path;
+}
+
+void Decription(Mat image, Mat stego, Mat key) {
+    bool is_key = true;
+    std::string path = "";
+    bool can_not_write = true;
+   
+    //resize(); if stego is too big, for stego сохранить соотношение
+    if (key.size() == Size(0, 0)) {
+        key = false;
+    }
+    key = EncryptionSecretPicture(stego, key);
+    stego.convertTo(stego, CV_32FC3, 1.0 / 255, 0);
+    convertSize(Size(image.cols / 2, image.rows / 2), stego);
+    std::vector<Mat> stegoRgbChannels(3);
+    split(stego, stegoRgbChannels);
+
+    //Haar Transform
+    image.convertTo(image, CV_32FC3, 1.0 / 255, 0);
+    std::vector<Mat> rgbChannels(3);
+    split(image, rgbChannels);
+    rgbChannels[0] = HaarTransform(rgbChannels[0], stegoRgbChannels[0]);
+    rgbChannels[1] = HaarTransform(rgbChannels[1], stegoRgbChannels[1]);
+    rgbChannels[2] = HaarTransform(rgbChannels[2], stegoRgbChannels[2]);
+
+    //InvHaar Transform
+    rgbChannels[0] = InvHaarTransform(rgbChannels[0]);
+    rgbChannels[1] = InvHaarTransform(rgbChannels[1]);
+    rgbChannels[2] = InvHaarTransform(rgbChannels[2]);
+    merge(rgbChannels, image);
+
+    convertSize(Size(key.cols, key.rows), stego);
+    //stego.convertTo(stego, CV_8UC3, 1.0 * 255, 0);
+    //DecryptionSecretPicture(stego, key);
+    image.convertTo(image, CV_16UC3, 1.0 * 255 * 255, 0);
+    if (!is_key)
+        path = get_path_to_write(key, "key.png");
+    if (path == "")
+        get_path_to_write(image, "result_stego.png");
+    else 
+        imwrite(path + "result_stego.png", image);
+}
+
+void Encription(Mat image, Mat key) {
+    std::string path;
+
+
+    image.convertTo(image, CV_32FC3, 1.0 / 255 / 255, 0);
+    std::vector<Mat> rgbChannels(3);
+
+    split(image, rgbChannels);
+    rgbChannels[0] = HaarTransform2(rgbChannels[0]);
+    rgbChannels[1] = HaarTransform2(rgbChannels[1]);
+    rgbChannels[2] = HaarTransform2(rgbChannels[2]);
+    merge(rgbChannels, image);
+
+    convertSize(Size(key.cols, key.rows), image);
+    image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
+    DecryptionSecretPicture(image, key);
+
+    get_path_to_write(image, "result_image.png");
+}
+
+void test() {
+    Mat image, stego, key;
+    //resize(); for stego сохранить соотношение
+    image = imread("../src_images/color.jpg", 1);
+    stego = imread("../src_images/color.jpg", 1);
+    key = EncryptionSecretPicture(stego, key);
     stego.convertTo(stego, CV_32FC3, 1.0 / 255, 0);
     convertSize(Size(image.cols / 2, image.rows / 2), stego);
     std::vector<Mat> stegoRgbChannels(3);
@@ -166,14 +256,14 @@ int main()
     rgbChannels[2] = HaarTransform(rgbChannels[2], stegoRgbChannels[2]);
     merge(rgbChannels, image);
 
-    //Encription into HH
-
     //InvHaar Transform
     split(image, rgbChannels);
     rgbChannels[0] = InvHaarTransform(rgbChannels[0]);
     rgbChannels[1] = InvHaarTransform(rgbChannels[1]);
     rgbChannels[2] = InvHaarTransform(rgbChannels[2]);
     merge(rgbChannels, image);
+    image.convertTo(image, CV_16UC3, 1.0 * 255 * 255, 0);
+    image.convertTo(image, CV_32FC3, 1.0 / 255 / 255, 0);
 
     split(image, rgbChannels);
     rgbChannels[0] = HaarTransform2(rgbChannels[0]);
@@ -184,9 +274,55 @@ int main()
     convertSize(Size(key.cols, key.rows), stego);
     stego.convertTo(stego, CV_8UC3, 1.0 * 255, 0);
     DecryptionSecretPicture(stego, key);
+    image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
+}
 
-    image.convertTo(image, CV_8UC3, 1.0 * 255 , 0);
-        
+int main(int argc, char* argv[])
+{
+    int mode = 1;
+    std::string path;
+    Mat image, stego, key;
+    setlocale(LC_ALL, "Russian");
+    test();
+    while (mode) {
+        std::cout << "Выберите и введите число:\n1. Сгенерировать ключ\n2. Зашифровать картинку\n3. Расшифровать картинку\n0. Закрыть программу" << std::endl; //\n4. Демонстрация работы
+        std::cin >> mode;
+        switch (mode) {
+        case 1:
+            break;
+        case 2:
+            std::cout << "Введите путь к исходной картинке:" << std::endl;
+            img_read(image, "Картинка не найдена, повторите ввод:");
+            std::cout << "Введите путь к картинке, которую хотите зашифровать:" << std::endl;
+            img_read(stego, "Картинка не найдена, повторите ввод:");
+            std::cout << "Введите путь к ключу (если его нет, введите '-'):" << std::endl;
+            std::cin >> path;
+            if (path != "-") {
+                while ((key = imread(path, IMREAD_ANYDEPTH | IMREAD_COLOR)).size() == Size(0, 0)) {
+                    std::cout << "Ключ не найден, повторите ввод:" << std::endl;
+                    std::cin >> path;
+                }
+            }
+            Decription(image, stego, key);
+            break;
+        case 3:
+            std::cout << "Введите путь к картинке, которую надо расшифровать:" << std::endl;
+            img_read(image, "Картинка не найдена, повторите ввод:");
+            std::cout << "Введите путь к ключу:" << std::endl;
+            img_read(key, "Ключ не найден, повторите ввод:");
+            Encription(image, key);
+            break;
+        case 4:
+            image = imread("../src_images/color2.jpg", 1);
+            stego = imread("../src_images/color.jpg", 1);
+            break;
+        case 0:
+            break;
+        default:
+            std::cout << "Такой опции не существует." << std::endl;
+            break;
+        }
+    }
 	waitKey();
 	return 0;
 }
