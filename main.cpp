@@ -86,7 +86,6 @@ void DecryptionSecretPictureMono(Mat& mat, Mat key) {
     bitwise_xor(mat, key, res);
 }
 
-
 Mat EncryptionSecretPicture(Mat& mat, Mat key) {
     Mat res = Mat(mat.size(), CV_8UC3);
     if (key.size() == Size(0, 0))
@@ -213,35 +212,6 @@ int intTypeOfImage(Mat img) {
         return 255 * 255;
 }
 
-void img_read(Mat& res, String str) {
-    String path;
-    std::cin >> path;
-    while ((res = imread(path, IMREAD_ANYDEPTH | IMREAD_COLOR)).size() == Size(0, 0)) {
-        std::cout << str << std::endl;
-        std::cin >> path;
-    }
-}
-
-std::string get_path_to_write(Mat img, std::string name) {
-    bool can_not_write = true;
-    std::string path;
-    std::cout << "Введите путь к папке, куда записать результат:" << std::endl;
-    while (can_not_write) {
-        std::cin >> path;
-        if (path[path.length() - 1] != '/' || path[path.length() - 1] != '\\')
-            path = path + '/';
-        try {
-            can_not_write = false;
-            imwrite(path + name, img);
-        }
-        catch (Exception e) {
-            can_not_write = true;
-            std::cout << "Папка не найдена. Повторите ввод:" << std::endl;
-        }
-    }
-    return path;
-}
-
 void resize_image(Mat& stego, Mat& image) {
     double x = 0;
     double y = 0;
@@ -254,63 +224,6 @@ void resize_image(Mat& stego, Mat& image) {
     else if (y != 0)
         resize(stego, stego, Size(stego.cols * y, stego.rows * y));
 }
-
-void Decription(Mat image, Mat stego, Mat key) {
-    bool is_key = true;
-    std::string path = "";
-    bool can_not_write = true;
-    if (key.size() == Size(0, 0)) {
-        key = false;
-    }
-    resize_image(stego, image);
-    convertSize(Size(image.cols / 2, image.rows / 2), stego);
-    resize(key, key, Size(image.cols / 2, image.rows / 2));
-    key = EncryptionSecretPicture(stego, key);
-    convertSize(Size(image.cols / 2, image.rows / 2), stego);
-    stego.convertTo(stego, CV_32FC3, 1.0 / intTypeOfImage(stego), 0);
-    std::vector<Mat> stegoRgbChannels(3);
-    split(stego, stegoRgbChannels);
-
-    //Haar Transform
-    image.convertTo(image, CV_32FC3, 1.0 / intTypeOfImage(image), 0);
-    std::vector<Mat> rgbChannels(3);
-    split(image, rgbChannels);
-    rgbChannels[0] = HaarTransform(rgbChannels[0], stegoRgbChannels[0]);
-    rgbChannels[1] = HaarTransform(rgbChannels[1], stegoRgbChannels[1]);
-    rgbChannels[2] = HaarTransform(rgbChannels[2], stegoRgbChannels[2]);
-
-    //InvHaar Transform
-    rgbChannels[0] = InvHaarTransform(rgbChannels[0]);
-    rgbChannels[1] = InvHaarTransform(rgbChannels[1]);
-    rgbChannels[2] = InvHaarTransform(rgbChannels[2]);
-    merge(rgbChannels, image);
-
-    convertSize(Size(key.cols, key.rows), stego);
-    image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
-    if (!is_key)
-        path = get_path_to_write(key, "key.png");
-    if (path == "")
-        get_path_to_write(image, "result_stego.png");
-    else 
-        imwrite(path + "result_stego.png", image);
-}
-
-void Encription(Mat image, Mat key) {
-    std::string path;
-    resize(key, key, Size(image.cols / 2, image.rows / 2));
-    image.convertTo(image, CV_32FC3, 1.0 / intTypeOfImage(image), 0);
-    std::vector<Mat> rgbChannels(3);
-    split(image, rgbChannels);
-    rgbChannels[0] = HaarTransformStego(rgbChannels[0]);
-    rgbChannels[1] = HaarTransformStego(rgbChannels[1]);
-    rgbChannels[2] = HaarTransformStego(rgbChannels[2]);
-    merge(rgbChannels, image);
-    image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
-    convertSize(Size(key.cols, key.rows), image);
-    DecryptionSecretPicture(image, key);
-    get_path_to_write(image, "result_image.png");
-}
-
 
 void monochrome(String image_name, String stego_name, String path) {
     Mat image, stego, key;
@@ -405,59 +318,8 @@ void multichrome(String image_name, String stego_name, String path) {
 
 int main(int argc, char* argv[])
 {
-    int mode = 1;
-    std::string path;
-    Mat image, stego, key;
-    setlocale(LC_ALL, "Russian");
-    while (mode) {
-        std::cout << "Выберите и введите число:\n1. Сгенерировать ключ\n2. Зашифровать картинку\n3. Расшифровать картинку\n4. Режим разработчика\n0. Закрыть программу" << std::endl; //
-        std::cin >> mode;
-        switch (mode) {
-        case 1:
-            int x, y;
-            bool type;
-            std::cout << "Введите ширину ключа:" << std::endl;
-            std::cin >> x;
-            std::cout << "Введите высоту ключа:" << std::endl;
-            std::cin >> y;
-            std::cout << "Ключ монохромный? (если да - введите 1, если нет - 0):" << std::endl;
-            std::cin >> type;
-            key = GenerateKey(Size(x, y), type);
-            get_path_to_write(key, "result_key.png");
-            break;
-        case 2:
-            std::cout << "Введите путь к исходной картинке:" << std::endl;
-            img_read(image, "Картинка не найдена, повторите ввод:");
-            std::cout << "Введите путь к картинке, которую хотите зашифровать:" << std::endl;
-            img_read(stego, "Картинка не найдена, повторите ввод:");
-            std::cout << "Введите путь к ключу (если его нет, введите '-'):" << std::endl;
-            std::cin >> path;
-            if (path != "-") {
-                while ((key = imread(path, IMREAD_ANYDEPTH | IMREAD_COLOR)).size() == Size(0, 0)) {
-                    std::cout << "Ключ не найден, повторите ввод:" << std::endl;
-                    std::cin >> path;
-                }
-            }
-            Decription(image, stego, key);
-            break;
-        case 3:
-            std::cout << "Введите путь к картинке, которую надо расшифровать:" << std::endl;
-            img_read(image, "Картинка не найдена, повторите ввод:");
-            std::cout << "Введите путь к ключу:" << std::endl;
-            img_read(key, "Ключ не найден, повторите ввод:");
-            Encription(image, key);
-            break;
-        case 4:
-            monochrome("pale.jpg", "src2.png", "../src_images/");
-            multichrome("pale.jpg", "src2.png", "../src_images/");
-            break;
-        case 0:
-            break;
-        default:
-            std::cout << "Такой опции не существует." << std::endl;
-            break;
-        }
-    }
+    monochrome("pale.jpg", "src2.png", "../src_images/");
+    multichrome("pale.jpg", "src2.png", "../src_images/");
 	waitKey();
 	return 0;
 }
