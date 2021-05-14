@@ -2,18 +2,18 @@
 
 using namespace cv;
 
-double test_PSNR(Mat &src, Mat &res) {
+double calc_PSNR(Mat &src, Mat &res) {
     double result = 0;
     for (int i = 0; i < src.rows; i++) {
         for (int j = 0; j < src.cols; j++) {
             result += pow(src.at<uchar>(i, j) - res.at<uchar>(i, j), 2);
         }
     }
-    result = 10 * log10(255 * 255 / src.rows * src.cols * result);
+    result = 10 * log10(255.0 * 255 / src.rows / src.cols * result);
     return result;
 }
 
-double test_PCC(Mat &src, Mat &res) {
+double calc_PCC(Mat &src, Mat &res) {
     double result = 0;
     double num = 0;
     double denom_1 = 0;
@@ -30,31 +30,37 @@ double test_PCC(Mat &src, Mat &res) {
     return num / sqrt(denom_1 * denom_2);
 }
 
-void test(Mat& src_image, Mat& res_image, Mat& src_stego, Mat& res_stego) {
-    double res_image, res_stego;
+void test_PSNR(Mat& src_image, Mat& res_image, bool multichrome) {
+    double res = 0;
     std::vector<Mat> channels_src, channels_res;
-    if (src_image.type() == CV_8UC1) {
-        res_image = test_PSNR(src_image, res_image);
-    }
-    else if (src_image.type() == CV_8UC3) {
+    if (src_image.type() == CV_8UC3) {
         split(src_image, channels_src);
         split(res_image, channels_res);
-        res_image = test_PSNR(channels_src[0], channels_res[0]);
-        res_image += test_PSNR(channels_src[1], channels_res[1]);
-        res_image += test_PSNR(channels_src[2], channels_res[2]);
-        res_image /= 3;
+        res = calc_PSNR(channels_src[0], channels_res[0]);
+        if (multichrome) {
+            res += calc_PSNR(channels_src[1], channels_res[1]);
+            res += calc_PSNR(channels_src[2], channels_res[2]);
+        }
+        res /= 3;
     }
+    std::cout << "PSNR: " << res << "  ";
+}
+
+void test_PCC(Mat& src_stego, Mat& res_stego) {
+    double res = 0;
+    std::vector<Mat> channels_src, channels_res;
     if (src_stego.type() == CV_8UC1) {
-        res_stego = test_PSNR(src_stego, res_stego);
+        res = calc_PCC(src_stego, res_stego);
     }
     else if (src_stego.type() == CV_8UC3) {
         split(src_stego, channels_src);
         split(res_stego, channels_res);
-        res_stego = test_PSNR(channels_src[0], channels_res[0]);
-        res_stego += test_PSNR(channels_src[1], channels_res[1]);
-        res_stego += test_PSNR(channels_src[2], channels_res[2]);
-        res_stego /= 3;
+        res = calc_PCC(channels_src[0], channels_res[0]);
+        res += calc_PCC(channels_src[1], channels_res[1]);
+        res += calc_PCC(channels_src[2], channels_res[2]);
+        res /= 3;
     }
+    std::cout << "PCC: " << res << std::endl;
 }
 
 Mat GenerateKey(Size size, bool mono) {
@@ -81,7 +87,7 @@ void DecryptionSecretPictureMono(Mat& mat, Mat key) {
 }
 
 
-Mat EncryptionSecretPicture(Mat &mat, Mat key) {
+Mat EncryptionSecretPicture(Mat& mat, Mat key) {
     Mat res = Mat(mat.size(), CV_8UC3);
     if (key.size() == Size(0, 0))
         key = GenerateKey(mat.size(), false);
@@ -306,12 +312,12 @@ void Encription(Mat image, Mat key) {
 }
 
 
-void monochrome() {
-    std::string path = "../src_images/";
+void monochrome(String image_name, String stego_name, String path) {
     Mat image, stego, key;
-    image = imread(path + "pale.jpg", 1);
-
-    stego = imread(path + "src2.png", IMREAD_GRAYSCALE);
+    Mat image_src = imread(path + image_name, 1);
+    image_src.copyTo(image);
+    Mat stego_src = imread(path + stego_name, IMREAD_GRAYSCALE);
+    stego_src.copyTo(stego);
     resize_image(stego, image);
     key = EncryptionSecretPictureMono(stego, key);
     imwrite(path + "key.png", key);
@@ -332,6 +338,7 @@ void monochrome() {
     merge(rgbChannels, image);
 
     image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
+    test_PSNR(image_src, image, false);
     imwrite(path + "result_stego.png", image);
     image.convertTo(image, CV_32FC3, 1.0 / intTypeOfImage(image), 0);
 
@@ -340,14 +347,16 @@ void monochrome() {
     stego.convertTo(stego, CV_8UC3, 1.0 * 255, 0);
     convertSize(Size(key.cols, key.rows), stego);
     DecryptionSecretPictureMono(stego, key);
+    test_PCC(stego_src, stego);
     imwrite(path + "result_image.png", stego);
 }
 
-void multichrome() {
-    std::string path = "../src_images/";
+void multichrome(String image_name, String stego_name, String path) {
     Mat image, stego, key;
-    image = imread(path + "pale.jpg", 1);
-    stego = imread(path + "src2.png", 1);
+    Mat image_src = imread(path + image_name, 1);
+    image_src.copyTo(image);
+    Mat stego_src = imread(path + stego_name, 1);
+    stego_src.copyTo(stego);
     resize_image(stego, image);
     key = EncryptionSecretPicture(stego, key);
     imwrite(path + "key.png", key);
@@ -374,6 +383,7 @@ void multichrome() {
     merge(rgbChannels, image);
 
     image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
+    test_PSNR(image_src, image, true);
     imwrite(path + "result_stego.png", image);
     image.convertTo(image, CV_32FC3, 1.0 / intTypeOfImage(image), 0);
 
@@ -385,8 +395,8 @@ void multichrome() {
 
     stego.convertTo(stego, CV_8UC3, 1.0 * 255, 0);
     convertSize(Size(key.cols, key.rows), stego);
-
     DecryptionSecretPicture(stego, key);
+    test_PCC(stego_src, stego);
     //Mat res;
     //cvtColor(stego, res, COLOR_BGR2GRAY);
     //imwrite(path + "result_image.png", res);
@@ -438,8 +448,8 @@ int main(int argc, char* argv[])
             Encription(image, key);
             break;
         case 4:
-            monochrome();
-            multichrome();
+            monochrome("pale.jpg", "src2.png", "../src_images/");
+            multichrome("pale.jpg", "src2.png", "../src_images/");
             break;
         case 0:
             break;
