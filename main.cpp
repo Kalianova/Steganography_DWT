@@ -9,7 +9,7 @@ double calc_PSNR(Mat &src, Mat &res) {
             result += pow(src.at<uchar>(i, j) - res.at<uchar>(i, j), 2);
         }
     }
-    result = 10 * log10(255.0 * 255 / src.rows / src.cols * result);
+    result = 255.0 * 255 / src.rows / src.cols * result;
     return result;
 }
 
@@ -36,12 +36,12 @@ void test_PSNR(Mat& src_image, Mat& res_image, bool multichrome) {
     if (src_image.type() == CV_8UC3) {
         split(src_image, channels_src);
         split(res_image, channels_res);
-        res = calc_PSNR(channels_src[0], channels_res[0]);
-        if (multichrome) {
-            res += calc_PSNR(channels_src[1], channels_res[1]);
-            res += calc_PSNR(channels_src[2], channels_res[2]);
-        }
-        res /= 3;
+        if (multichrome)
+            res = 10 * log10((  calc_PSNR(channels_src[0], channels_res[0]) + 
+                                calc_PSNR(channels_src[1], channels_res[1]) +
+                                calc_PSNR(channels_src[2], channels_res[2])) / 3);
+        else
+            res = 10 * log10(calc_PSNR(channels_src[0], channels_res[0]));
     }
     std::cout << "PSNR: " << res << "  ";
 }
@@ -117,13 +117,13 @@ void DecryptionSecretPicture(Mat &mat, Mat key) {
 
 Mat HaarTransformStego(Mat src) {
     float c, dh, dv, dd;
-    int width = src.cols;
-    int height = src.rows;
+    int width = src.cols * src.channels() / 2;
+    int height = src.rows * src.channels() / 2;
     double a = 0.005;
     Mat tmp = Mat::zeros(src.rows / 2, src.cols / 2, CV_32FC1);
     int k = 0;
-    for (int y = 0; y < (height >> 1); y++) {
-        for (int x = 0; x < (width >> 1); x++) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
             dd = (src.at<float>(2 * y, 2 * x) - src.at<float>(2 * y, 2 * x + 1) - src.at<float>(2 * y + 1, 2 * x) + src.at<float>(2 * y + 1, 2 * x + 1)) * 0.5;
             tmp.at<float>(y, x) = dd / a;    
         }
@@ -133,23 +133,22 @@ Mat HaarTransformStego(Mat src) {
 
 Mat HaarTransform(Mat src, Mat stego) {
     float c, dh, dv, dd;
-    int width = src.cols;
-    int height = src.rows;
+    int width = src.cols * src.channels() / 2;
+    int height = src.rows * src.channels() / 2;
     float a = 0.005;
     Mat tmp = Mat::zeros(src.size(), CV_32FC1);
-    int k = 0;
-    for (int y = 0; y < (height >> 1); y++) {
-        for (int x = 0; x < (width >> 1); x++) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
             c = (src.at<float>(2 * y, 2 * x) + src.at<float>(2 * y, 2 * x + 1) + src.at<float>(2 * y + 1, 2 * x) + src.at<float>(2 * y + 1, 2 * x + 1)) * 0.5;
             tmp.at<float>(y, x) = c;
 
             dh = (src.at<float>(2 * y, 2 * x) + src.at<float>(2 * y + 1, 2 * x) - src.at<float>(2 * y, 2 * x + 1) - src.at<float>(2 * y + 1, 2 * x + 1)) * 0.5;
-            tmp.at<float>(y, x + (width >> 1)) = dh;
+            tmp.at<float>(y, x + width) = dh;
 
             dv = (src.at<float>(2 * y, 2 * x) + src.at<float>(2 * y, 2 * x + 1) - src.at<float>(2 * y + 1, 2 * x) - src.at<float>(2 * y + 1, 2 * x + 1)) * 0.5;
-            tmp.at<float>(y + (height >> 1), x) = dv;
+            tmp.at<float>(y + height, x) = dv;
 
-            tmp.at<float>(y + (height >> 1), x + (width >> 1)) = a * stego.at<float>(y, x);
+            tmp.at<float>(y + height, x + width) = a * stego.at<float>(y, x);
         }
     }
     return tmp;
@@ -157,16 +156,15 @@ Mat HaarTransform(Mat src, Mat stego) {
 
 Mat InvHaarTransform(Mat src) {
     float c, dh, dv, dd;
-    int width = src.cols;
-    int height = src.rows;
+    int width = src.cols * src.channels() / 2;
+    int height = src.rows * src.channels() / 2;
     Mat dst = Mat::zeros(src.size(), CV_32FC1);;
-    int k = 1;
-    for (int y = 0; y < (height >> k); y++) {
-        for (int x = 0; x < (width >> k); x++) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
             c = src.at<float>(y, x);
-            dh = src.at<float>(y, x + (width >> k));
-            dv = src.at<float>(y + (height >> k), x);
-            dd = src.at<float>(y + (height >> k), x + (width >> k));
+            dh = src.at<float>(y, x + width);
+            dv = src.at<float>(y + height, x);
+            dd = src.at<float>(y + height, x + width);
             dst.at<float>(y * 2, x * 2) = 0.5 * (c + dh + dv + dd);
             dst.at<float>(y * 2, x * 2 + 1) = 0.5 * (c - dh + dv - dd);
             dst.at<float>(y * 2 + 1, x * 2) = 0.5 * (c + dh - dv - dd);
@@ -230,12 +228,13 @@ void monochrome(String image_name, String stego_name, String path) {
     Mat image_src = imread(path + image_name, 1);
     image_src.copyTo(image);
     Mat stego_src = imread(path + stego_name, IMREAD_GRAYSCALE);
+
+    resize_image(stego_src, image);
+    convertSize(Size(image.cols / 2, image.rows / 2), stego_src);
     stego_src.copyTo(stego);
-    resize_image(stego, image);
     key = EncryptionSecretPictureMono(stego, key);
     imwrite(path + "key.png", key);
 
-    convertSize(Size(image.cols / 2, image.rows / 2), stego);
     stego.convertTo(stego, CV_32FC3, 1.0 / intTypeOfImage(stego), 0);
 
     //Haar Transform
@@ -252,7 +251,7 @@ void monochrome(String image_name, String stego_name, String path) {
 
     image.convertTo(image, CV_8UC3, 1.0 * 255, 0);
     test_PSNR(image_src, image, false);
-    imwrite(path + "result_stego.png", image);
+    imwrite(path + "result_stego_mono.png", image);
     image.convertTo(image, CV_32FC3, 1.0 / intTypeOfImage(image), 0);
 
     split(image, rgbChannels);
@@ -261,7 +260,7 @@ void monochrome(String image_name, String stego_name, String path) {
     convertSize(Size(key.cols, key.rows), stego);
     DecryptionSecretPictureMono(stego, key);
     test_PCC(stego_src, stego);
-    imwrite(path + "result_image.png", stego);
+    imwrite(path + "result_image_mono.png", stego);
 }
 
 void multichrome(String image_name, String stego_name, String path) {
@@ -269,12 +268,13 @@ void multichrome(String image_name, String stego_name, String path) {
     Mat image_src = imread(path + image_name, 1);
     image_src.copyTo(image);
     Mat stego_src = imread(path + stego_name, 1);
+    resize_image(stego_src, image);
+    convertSize(Size(image.cols / 2, image.rows / 2), stego_src);
     stego_src.copyTo(stego);
-    resize_image(stego, image);
+
     key = EncryptionSecretPicture(stego, key);
     imwrite(path + "key.png", key);
     
-    convertSize(Size(image.cols / 2, image.rows / 2), stego);
     stego.convertTo(stego, CV_32FC3, 1.0 / intTypeOfImage(stego), 0);
     std::vector<Mat> stegoRgbChannels(3);
     split(stego, stegoRgbChannels);
@@ -310,16 +310,20 @@ void multichrome(String image_name, String stego_name, String path) {
     convertSize(Size(key.cols, key.rows), stego);
     DecryptionSecretPicture(stego, key);
     test_PCC(stego_src, stego);
-    //Mat res;
-    //cvtColor(stego, res, COLOR_BGR2GRAY);
-    //imwrite(path + "result_image.png", res);
     imwrite(path + "result_image.png", stego);
 }
 
 int main(int argc, char* argv[])
 {
-    monochrome("pale.jpg", "src2.png", "../src_images/");
-    multichrome("pale.jpg", "src2.png", "../src_images/");
+    std::string images[] =  { "pale.jpg", "color2.jpg", "black.jpg", "doc.png" };
+    std::string secret[] = { "color.jpg", "anim.jpg", "doc2.png" };
+    for (auto i : images) {
+        for (auto j : secret) {
+            std::cout << i << " " << j << std::endl;
+            monochrome(i, j, "../src_images/");
+            multichrome(i, j, "../src_images/");
+        }
+    }
 	waitKey();
 	return 0;
 }
